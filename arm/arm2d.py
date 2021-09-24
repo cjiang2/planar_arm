@@ -15,22 +15,15 @@ class Arm2D:
         self.ax.axis('equal')
 
     def _forward_kine(self, 
-                      angles):
+                      thetas):
         """Forward Kinematics.
-        Given link lengths, and joint angles, compute cartesian 
-        coordinates for each joint.
+        Given the fixed link lengths, and joint angles, compute the 
+        position of the end effector.
         """
-        # Draw each segment
-        f = 0
-        t = 0
-        fs, ps = [], []
-        for idx in range(len(self.L)):
-            t = t + angles[idx]
-            p = f + (np.complex(np.cos(t), np.sin(t))) * self.L[idx]
-            fs.append(f)
-            ps.append(p)
-            f = p
-        return fs, ps
+        pos = np.zeros((2, ), dtype=np.float32)
+        pos[0] = self.L[0] * np.cos(thetas[0])) + self.L[1] * np.cos(thetas[0] + thetas[1])
+        pos[1] = self.L[0] * np.sin(thetas[1])) + self.L[1] * np.sin(thetas[0] + thetas[1])
+        return pos
 
     def _inverse_kine(self):
         """Inverse kinematics.
@@ -78,9 +71,14 @@ class Arm2D:
         ltot = np.sum(self.L)
         self.ax.plot([-ltot, ltot, ltot, -ltot], [-ltot, -ltot, ltot, ltot], 'w')
 
-        fs, ps = self._forward_kine(angles)
-        for i in range(len(fs)):
-            plotSeg(fs[i], ps[i])
+        # Draw each segment
+        f = 0
+        t = 0
+        for idx in range(len(self.L)):
+            t = t + angles[idx]
+            p = f + (np.complex(np.cos(t), np.sin(t))) * self.L[idx]
+            plotSeg(f, p)
+            f = p
 
         plt.show()
         return
