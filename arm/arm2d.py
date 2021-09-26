@@ -1,42 +1,49 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.backend_bases import MouseButton
 
 class Arm2D:
     def __init__(self, 
+                 theta: np.ndarray = None,
                  L: np.ndarray = np.array([0.5, 0.5]).T):
-        self._constraint_fig()
         self.L = L  # Link length
+        self.theta = theta  # Joint angle
+        self._constraint_fig()
+
+        self.pos = np.zeros((3, 2))   # Pos of joints
 
     def _constraint_fig(self):
         """To make figure look nicer.
         """
+        self.p = None   # Click point from event / desired end effector position
         self.fig = plt.figure()
         self.ax = self.fig.gca()
         self.ax.axis('equal')
+        self.cid = self.fig.canvas.mpl_connect('button_press_event', self)
 
-    def _forward_kine(self, 
-                      thetas):
-        """Forward Kinematics.
-        Given the fixed link lengths, and joint angles, compute the 
-        position of the end effector.
-        """
-        pos = np.zeros((2, ), dtype=np.float32)
-        pos[0] = self.L[0] * np.cos(thetas[0])) + self.L[1] * np.cos(thetas[0] + thetas[1])
-        pos[1] = self.L[0] * np.sin(thetas[1])) + self.L[1] * np.sin(thetas[0] + thetas[1])
-        return pos
+    def __call__(self, 
+                 event):
+        # Left mouse click saves coordinates
+        if event.button is MouseButton.LEFT:
+            self.p = np.array([event.xdata, event.ydata])
+
+        # ####################
+        # Write Plotting, forward and inverse kinematics here
+        self.plot()
+
+        # ####################
 
     def _inverse_kine(self):
         """Inverse kinematics.
         """
         return
     
-    def plot(self, 
-             angles):
+    def plot(self):
         """Plot the 2D planar manipulator.
         """
         def mycircle(rad,
-                    px,
-                    py):
+                     px,
+                     py):
             t = np.linspace(0, 2 * np.pi, 10)
             self.ax.plot(rad * np.cos(t) + px, rad * np.sin(t) + py, 'k')
             return
@@ -67,18 +74,38 @@ class Arm2D:
             pts = np.array([to_, to_ + np.complex(0, r3) * d])
             self.ax.plot(np.real(pts), np.imag(pts), 'g')
 
+        # Clear figure 1st
+        self.ax.clear()
+
         # Plot an invisible workspace
         ltot = np.sum(self.L)
         self.ax.plot([-ltot, ltot, ltot, -ltot], [-ltot, -ltot, ltot, ltot], 'w')
 
         # Draw each segment
+        # NOTE: A complex number based forward kinematics is here
         f = 0
         t = 0
         for idx in range(len(self.L)):
-            t = t + angles[idx]
+            # ####################
+            # Forward Kinematics Here
+            t = t + self.theta[idx]
             p = f + (np.complex(np.cos(t), np.sin(t))) * self.L[idx]
+
+            # Grab the descriptors/pos of each joints
+            self.pos[idx] = np.array([np.real(f), np.imag(f)])
+            self.pos[idx+1] = np.array([np.real(p), np.imag(p)])
+            # ####################
+
             plotSeg(f, p)
             f = p
+
+        # Draw clicked point
+        if self.p is not None:
+            print('Clicked Point:', self.p)
+            self.ax.scatter(self.p[0], self.p[1], c='blue')
+
+        # Darken joints
+        self.ax.scatter(self.pos[:,0], self.pos[:,1], c='orange')
 
         plt.show()
         return
