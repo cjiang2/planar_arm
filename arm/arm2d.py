@@ -1,13 +1,90 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backend_bases import MouseButton
+from math import sin, cos
+
+def forKin(theta, L):
+    # NOTE: A complex number based forward kinematics
+    # From Martin's 340 demo code.
+    f = 0
+    t = 0
+    pos = np.zeros((3, 2))
+    for idx in range(len(L)):
+        # ####################
+        # Forward Kinematics Here
+        t = t + theta[idx]
+        p = f + (np.complex(np.cos(t), np.sin(t))) * L[idx]
+
+        # Grab the descriptors/pos of each joints
+        pos[idx] = np.array([np.real(f), np.imag(f)])
+        pos[idx+1] = np.array([np.real(p), np.imag(p)])
+        f = p
+    return pos
+
+def jacobian_(theta, 
+              L):
+    """Get analytical jacobian.
+    """
+    J = np.zeros((2, 2), dtype=np.float32)
+    J[0, 0] = -L[0] * sin(theta[0]) - L[1] * sin(theta[0] + theta[1])
+    J[0, 1] = -L[1] * sin(theta[0] + theta[1])
+    J[1, 0] = L[0] * cos(theta[0]) + L[1] * cos(theta[0] + theta[1])
+    J[1, 1] = L[1] * cos(theta[0] + theta[1])
+    return J
+
+def invKin_v1(theta,
+              L,
+              pos1,
+              n_iters: int = 100, 
+              threshold: float = 1e-2):
+    """Inverse Kinematics
+    Given desired pos, get joint angles.
+    Version 1: Newton's method.
+    """
+    theta = np.asmatrix(theta)
+    for _ in range(n_iters):
+        J = jacobian_(theta, L)
+        pos0 = forKin(theta, L)[-1, :]
+        delta_p = np.asmatrix(pos0 - pos1).T
+        s = np.linalg.solve(-J, delta_p)
+        theta += s
+        if s.all() < threshold:
+            break
+    return theta
+
+def invKin_v2(theta,
+              L,
+              pos1,
+              n_iters: int = 10, 
+              threshold: float = 1e-2):
+    """Inverse Kinematics
+    Given desired pos, get joint angles.
+    Version 2: Broyden's method.
+    """
+    theta = np.asmatrix(theta)
+    B = jacobian_(theta, L)     # Inital guess for jacobian, use actual jacobian
+    for _ in range(n_iters):
+        pos0 = forKin(theta, L)[-1, :]
+        delta_p = np.asmatrix(pos0 - pos1).T
+        s = np.linalg.pinv(-B) * delta_p
+        theta += s
+        if s.all() < threshold:
+            break
+
+        # Update approx jacobian
+        y = np.asmatrix(forKin(theta, L)[-1, :] - pos0).T   # delta_p current iter
+        B += ((y - B * s) * s.T) / (s.T * s)
+
+    return theta
 
 class Arm2D:
     def __init__(self, 
                  theta: np.ndarray = None,
-                 L: np.ndarray = np.array([0.5, 0.5]).T):
+                 L: np.ndarray = np.array([0.5, 0.5]).T,
+                 method: str = 'broyden'):
         self.L = L  # Link length
         self.theta = theta  # Joint angle
+        self.method = method
         self._constraint_fig()
 
         self.pos = np.zeros((3, 2))   # Pos of joints
@@ -27,18 +104,17 @@ class Arm2D:
         if event.button is MouseButton.LEFT:
             self.p = np.array([event.xdata, event.ydata])
 
-        # ####################
-        # Write Plotting, forward and inverse kinematics here
-        self.plot()
+        # Move robot to desired coordinate using inverse kinematics
+        if self.method == 'broyden':
+            self.theta = invKin_v2(self.theta, self.L, self.p)
+        else:
+            self.theta = invKin_v1(self.theta, self.L, self.p)
 
-        # ####################
+        # Draw
+        self.plot(event)
 
-    def _inverse_kine(self):
-        """Inverse kinematics.
-        """
-        return
-    
-    def plot(self):
+    def plot(self, 
+             event=None):
         """Plot the 2D planar manipulator.
         """
         def mycircle(rad,
@@ -99,13 +175,16 @@ class Arm2D:
             plotSeg(f, p)
             f = p
 
+        # Darken joints
+        self.ax.scatter(self.pos[:,0], self.pos[:,1], c='orange')
+
         # Draw clicked point
         if self.p is not None:
             print('Clicked Point:', self.p)
             self.ax.scatter(self.p[0], self.p[1], c='blue')
 
-        # Darken joints
-        self.ax.scatter(self.pos[:,0], self.pos[:,1], c='orange')
-
-        plt.show()
+        if event is not None:
+            event.canvas.draw()
+        else:
+            plt.show()
         return
