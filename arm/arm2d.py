@@ -21,8 +21,8 @@ def forKin(theta, L):
         f = p
     return pos
 
-def jacobian_(theta, 
-              L):
+def jacobian_a_(theta, 
+                L):
     """Get analytical jacobian.
     """
     J = np.zeros((2, 2), dtype=np.float32)
@@ -32,9 +32,30 @@ def jacobian_(theta,
     J[1, 1] = L[1] * cos(theta[0] + theta[1])
     return J
 
+def jacobian_cd_(theta,
+                 L,
+                 alpha: float = 1e-8):
+    """Get Jacobian from central difference.
+    """
+    J = np.asmatrix(np.zeros((2, 2), dtype=np.float32))
+    J[0,:] = 0
+
+    theta = np.asmatrix(theta)
+    for i in range(J.shape[0]):
+        alpha_ = np.asmatrix(np.zeros((2, 1), dtype=np.float32))
+        alpha_[i, :] = alpha
+
+        # Central difference, w.r.t theta_i
+        j = (forKin(theta + alpha_, L)[-1] - forKin(theta - alpha_, L)[-1]) / (2 * alpha)
+        j = np.asmatrix(j).T
+        J[:,i] = j  # column
+
+    return J
+
 def invKin_v1(theta,
               L,
               pos1,
+              method: dict,
               n_iters: int = 100, 
               threshold: float = 1e-2):
     """Inverse Kinematics
@@ -43,7 +64,13 @@ def invKin_v1(theta,
     """
     theta = np.asmatrix(theta)
     for _ in range(n_iters):
-        J = jacobian_(theta, L)
+        # Analytical
+        if method['jacobian'] == 'a':
+            J = jacobian_a_(theta, L)
+        # Or central difference
+        else:
+            J = jacobian_cd_(theta, L)
+
         pos0 = forKin(theta, L)[-1, :]
         delta_p = np.asmatrix(pos0 - pos1).T
         s = np.linalg.solve(-J, delta_p)
@@ -55,6 +82,7 @@ def invKin_v1(theta,
 def invKin_v2(theta,
               L,
               pos1,
+              method: dict,
               n_iters: int = 10, 
               threshold: float = 1e-2):
     """Inverse Kinematics
@@ -62,7 +90,13 @@ def invKin_v2(theta,
     Version 2: Broyden's method.
     """
     theta = np.asmatrix(theta)
-    B = jacobian_(theta, L)     # Inital guess for jacobian, use actual jacobian
+    # Analytical
+    if method['jacobian'] == 'a':
+        B = jacobian_a_(theta, L)
+    # Or central difference
+    else:
+        B = jacobian_cd_(theta, L)
+
     for _ in range(n_iters):
         pos0 = forKin(theta, L)[-1, :]
         delta_p = np.asmatrix(pos0 - pos1).T
@@ -81,13 +115,13 @@ class Arm2D:
     def __init__(self, 
                  theta: np.ndarray = None,
                  L: np.ndarray = np.array([0.5, 0.5]).T,
-                 method: str = 'broyden'):
+                 method: dict = {'invKin': 'broyden', 
+                                 'jacobian': 'cd'}
+                ):
         self.L = L  # Link length
         self.theta = theta  # Joint angle
         self.method = method
         self._constraint_fig()
-
-        self.pos = np.zeros((3, 2))   # Pos of joints
 
     def _constraint_fig(self):
         """To make figure look nicer.
@@ -105,10 +139,10 @@ class Arm2D:
             self.p = np.array([event.xdata, event.ydata])
 
         # Move robot to desired coordinate using inverse kinematics
-        if self.method == 'broyden':
-            self.theta = invKin_v2(self.theta, self.L, self.p)
+        if self.method['invKin'] == 'broyden':
+            self.theta = invKin_v2(self.theta, self.L, self.p, method=self.method)
         else:
-            self.theta = invKin_v1(self.theta, self.L, self.p)
+            self.theta = invKin_v1(self.theta, self.L, self.p, method=self.method)
 
         # Draw
         self.plot(event)
@@ -161,6 +195,7 @@ class Arm2D:
         # NOTE: A complex number based forward kinematics is here
         f = 0
         t = 0
+        pos = np.zeros((3, 2))
         for idx in range(len(self.L)):
             # ####################
             # Forward Kinematics Here
@@ -168,22 +203,20 @@ class Arm2D:
             p = f + (np.complex(np.cos(t), np.sin(t))) * self.L[idx]
 
             # Grab the descriptors/pos of each joints
-            self.pos[idx] = np.array([np.real(f), np.imag(f)])
-            self.pos[idx+1] = np.array([np.real(p), np.imag(p)])
+            pos[idx] = np.array([np.real(f), np.imag(f)])
+            pos[idx+1] = np.array([np.real(p), np.imag(p)])
             # ####################
 
             plotSeg(f, p)
             f = p
 
         # Darken joints
-        self.ax.scatter(self.pos[:,0], self.pos[:,1], c='orange')
+        self.ax.scatter(pos[:,0], pos[:,1], c='orange')
 
         # Draw clicked point
-        if self.p is not None:
+        if event is not None:
             print('Clicked Point:', self.p)
             self.ax.scatter(self.p[0], self.p[1], c='blue')
-
-        if event is not None:
             event.canvas.draw()
         else:
             plt.show()
