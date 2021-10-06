@@ -2,8 +2,8 @@
 - [] Base: 3-axis
     - [OK] Homogeneous transformation for Forward Kinematics.
     - [OK] Stick Visualization.
-    - [] Numerical Inverse Kinematics.
-        - [] Analytical Jacobian.
+    - [OK] Numerical Inverse Kinematics.
+        - [OK] Analytical Jacobian.
         - [OK] Jacobian w/ Central Difference.
         - [OK] Newton's Method.
         - [OK] Broyden's Method.
@@ -18,6 +18,7 @@
 - [] Visual Servoing
     - [] Camera Projection.
         - [] Reading: Figure out which camera model to use.
+            - camera up vector.
         - [] Specify one or two cameras.
             - [] On arm camera.
             - [] Static camera.
