@@ -1,239 +1,79 @@
+from math import sin, cos, pi
+
 import numpy as np
 import matplotlib.pyplot as plt
-from math import sin, cos
 from matplotlib.backend_bases import MouseButton
 
-def forKin_v1(theta, 
-           L, 
-           p0=np.array([0.0, 0.0, 0.0])):
-    """From Martin's robotics lecture. 
-    Forward kinematics for a 3-joint robot.
+from .camera import plotCamera
+from . import basic_servoing, visual_servoing
+
+# --------------------
+# Forward Kinematics for 3D Arm
+# --------------------
+
+def DH_matrix(alpha_i_1: float, 
+              a_i_1: float,
+              d_i: float,
+              theta_i):
+    """Get Denavit–Hartenberg transformation matrix.
     """
-    # Joint 01
-    Rxy1 = np.matrix([[cos(theta[0]), sin(theta[0]), 0],
-                      [-sin(theta[0]), cos(theta[0]), 0], 
-                      [0, 0, 1],
+    return np.matrix([[cos(theta_i), -sin(theta_i)*cos(alpha_i_1), sin(theta_i)*cos(alpha_i_1), a_i_1*cos(theta_i)], 
+                      [sin(theta_i), cos(theta_i) * cos(alpha_i_1), -cos(theta_i)*sin(alpha_i_1), -a_i_1 * sin(theta_i)],
+                      [0, sin(alpha_i_1), cos(alpha_i_1), d_i],
+                      [0, 0, 0, 1],
                      ])
-
-    p1 = Rxy1 * np.matrix([[L[0], 0, 0]]).T
-    p1 = np.asarray(p1).squeeze(1) + p0
-    #print(p1, p1.shape)
-
-    # Joint 12
-    Rxz2 = np.matrix([[cos(theta[1]), 0, sin(theta[1])],
-                      [0, 1, 0],
-                      [-sin(theta[1]), 0, cos(theta[1])], 
-                     ])
-    p2 = Rxy1 * Rxz2 * np.matrix([[L[1], 0, 0]]).T
-    p2 = np.asarray(p2).squeeze(1) + p1
-    #print(p2, p2.shape)
-
-    # Joint 23
-    Rxz3 = np.matrix([[cos(theta[2]), 0, sin(theta[2])],
-                      [0, 1, 0],
-                      [-sin(theta[2]), 0, cos(theta[2])], 
-                     ])
-    p3 = Rxy1 * Rxz2 * Rxz3 * np.matrix([[L[2], 0, 0]]).T
-    p3 = np.asarray(p3).squeeze(1) + p2
-    #print(p3, p3.shape)
-
-    pos = np.stack([p0, p1, p2, p3], axis=0)
-    #print(pos.shape)
-    return pos   # Remove homogeneous term
 
 def forKin(theta, 
            L, 
-           p0 = np.array([0.0, 0.0, 0.0, 1])):
-    """From Martin's robotics lecture. 
-    Forward kinematics for a 3-joint robot.
-    Version 2: Convert into homogeneous transformation.
+           p0=np.array([0.0, 0.0, 0.0, 1])):
+    """Forward kinematics for a 3-joint robot.
+    Using DH parameters.
     """
-    # Joint 01
-    P0 = np.asmatrix(p0).T
-    Rxy1 = np.matrix([[cos(theta[0]), sin(theta[0]), 0, L[0]],
-                      [-sin(theta[0]), cos(theta[0]), 0, 0], 
-                      [0, 0, 1, 0],
-                      [0, 0, 0, 1],
-                     ])
-    p1 = Rxy1 * P0
-    p1 = np.asarray(p1).squeeze(1)
-    #print(p1, p1.shape)
+    # Twist alpha_i, link length a_i, link offset d_i, joint angle theta_i
+    dh_table = [[pi/2, 0, L[0], np.asscalar(theta[0])], 
+                [0, L[1], 0, np.asscalar(theta[1])],
+                [0, L[2], 0, np.asscalar(theta[2])]]
 
-    # Joint 12
-    Rxz2 = np.matrix([[cos(theta[1]), 0, sin(theta[1]), L[1]],
-                      [0, 1, 0, 0],
-                      [-sin(theta[1]), 0, cos(theta[1]), 0],
-                      [0, 0, 0, 1] 
-                     ])
-    p2 = Rxy1 * Rxz2 * P0
-    p2 = np.asarray(p2).squeeze(1)
-    #print(p2, p2.shape)
+    # Transformation
+    T0_1 = DH_matrix(dh_table[0][0], dh_table[0][1], dh_table[0][2], dh_table[0][3])
+    T1_2 = DH_matrix(dh_table[1][0], dh_table[1][1], dh_table[1][2], dh_table[1][3])
+    T2_3 = DH_matrix(dh_table[2][0], dh_table[2][1], dh_table[2][2], dh_table[2][3])
+    
+    P0 = np.matrix([p0[0], p0[1], p0[2], p0[3]]).T
+    p1 = np.asarray(T0_1 * P0).squeeze(1)
+    p2 = np.asarray(T0_1 * T1_2 * P0).squeeze(1)
+    p3 = np.asarray(T0_1 * T1_2 * T2_3 * P0).squeeze(1)
 
-    # Joint 23
-    Rxz3 = np.matrix([[cos(theta[2]), 0, sin(theta[2]), L[2]],
-                      [0, 1, 0, 0],
-                      [-sin(theta[2]), 0, cos(theta[2]), 0],
-                      [0, 0, 0, 1], 
-                     ])
-    p3 = Rxy1 * Rxz2 * Rxz3 * P0
-    p3 = np.asarray(p3).squeeze(1)
-    #print(p3, p3.shape)
+    pos = np.stack([p0, p1, p2, p3], axis=1)
+    return pos   # Remove homogeneous term (4, dof) -> (3, dof)
 
-    pos = np.stack([p0, p1, p2, p3], axis=0)
-    #print(pos.shape)
-    return pos[:,:-1]   # Remove homogeneous term
 
-def jacobian_cd_(theta,
-                 L,
-                 alpha: float = 1e-8,
-                 forKin_func = forKin):
-    """Get Jacobian from central difference.
+# --------------------
+# Simulated 2D Pose Tracking
+# --------------------
+
+class PoseTrack(object):
+    """Fake visual tracker to track 
+    pose of the end effector.
     """
-    J = np.asmatrix(np.zeros((3, len(theta)), dtype=np.float32))
-    J[0,:] = 0
+    def __init__(self, 
+                 cams: list,
+                 dof: int):
+        self.cams = cams
+        self.dof = dof
 
-    theta = np.asmatrix(theta)
-    for i in range(J.shape[0]):
-        alpha_ = np.asmatrix(np.zeros((len(theta), 1), dtype=np.float32))
-        alpha_[i, :] = alpha
+    def track(self, 
+              pos: np.ndarray):
+        assert pos.shape[0] == 4
+        if len(pos.shape) == 1:
+            pos = np.expand_dims(pos, axis=1)
 
-        # Central difference, w.r.t theta_i
-        # Remove homogeneous term
-        j = (forKin_func(theta + alpha_, L)[-1,:] - forKin_func(theta - alpha_, L)[-1,:]) / (2 * alpha)
-        j = np.asmatrix(j).T
-        J[:,i] = j  # column
+        x = np.zeros((len(self.cams), 2))
+        for i, cam in enumerate(self.cams):
+            x_cam = cam(pos).squeeze(1)
+            x[i,:] = x_cam
 
-    return J
-
-def jacobian_a_(theta,
-                L, 
-                p0 = np.array([0.0, 0.0, 0.0, 1])):
-    """Get the analytical Jacobian.
-    """
-    # Prep jacobian
-    J = np.asmatrix(np.zeros((3, len(theta)), dtype=np.float32))
-
-    # Geometric Forward Kinematics
-    P0 = np.asmatrix(p0).T
-    T0 = np.matrix([[1, 0, 0, L[0]],
-                    [0, 1, 0, 0], 
-                    [0, 0, 1, 0],
-                    [0, 0, 0, 1],
-                   ])
-    Rxy1 = np.matrix([[cos(theta[0]), sin(theta[0]), 0, 0],
-                      [-sin(theta[0]), cos(theta[0]), 0, 0], 
-                      [0, 0, 1, 0],
-                      [0, 0, 0, 1],
-                     ])
-
-    T1 = np.matrix([[1, 0, 0, L[1]],
-                    [0, 1, 0, 0], 
-                    [0, 0, 1, 0],
-                    [0, 0, 0, 1],
-                   ])
-    Rxz2 = np.matrix([[cos(theta[1]), 0, sin(theta[1]), 0],
-                      [0, 1, 0, 0],
-                      [-sin(theta[1]), 0, cos(theta[1]), 0],
-                      [0, 0, 0, 1] 
-                     ])
-
-    T2 = np.matrix([[1, 0, 0, L[2]],
-                    [0, 1, 0, 0], 
-                    [0, 0, 1, 0],
-                    [0, 0, 0, 1],
-                   ])
-    Rxz3 = np.matrix([[cos(theta[2]), 0, sin(theta[2]), 0],
-                      [0, 1, 0, 0],
-                      [-sin(theta[2]), 0, cos(theta[2]), 0],
-                      [0, 0, 0, 1], 
-                     ])
-
-    # Derivatives    
-    dRxy1 = np.matrix([[-sin(theta[0]), cos(theta[0]), 0, 0],
-                       [-cos(theta[0]), -sin(theta[0]), 0, 0], 
-                       [0, 0, 0, 0],
-                       [0, 0, 0, 0],
-                      ])
-    dRxz2 = np.matrix([[-sin(theta[1]), 0, cos(theta[1]), 0],
-                       [0, 0, 0, 0],
-                       [-cos(theta[1]), 0, -sin(theta[1]), 0],
-                       [0, 0, 0, 0] 
-                      ])
-    dRxz3 = np.matrix([[-sin(theta[2]), 0, cos(theta[2]), 0],
-                       [0, 0, 0, 0],
-                       [-cos(theta[2]), 0, -sin(theta[2]), 0],
-                       [0, 0, 0, 0], 
-                      ])
-
-    # Calculate by column
-    df_dtheta1 = T0 * dRxy1 * T1 * Rxz2 * T2 * Rxz3 * P0
-    df_dtheta2 = T0 * Rxy1 * T1 * dRxz2 * T2 * Rxz3 * P0
-    df_dtheta3 = T0 * Rxy1 * T1 * Rxz2 * T2 * dRxz3 * P0
-
-    J[:,0] = df_dtheta1[:-1,:]
-    J[:,1] = df_dtheta2[:-1,:]
-    J[:,2] = df_dtheta3[:-1,:]
-
-    return J
-
-def invKin_v1(theta,
-              L,
-              pos1,
-              n_iters: int = 1000, 
-              threshold: float = 1e-2,
-              forKin_func = forKin,
-              jacobian_func = jacobian_cd_):
-    """Inverse Kinematics
-    Given desired pos, get joint angles.
-    Version 1: Newton's method.
-    """
-    theta = np.asmatrix(theta)
-    for _ in range(n_iters):
-        if "jacobian_cd_" in str(jacobian_func):
-            B = jacobian_func(theta, L, forKin_func=forKin_func)
-        else:
-            B = jacobian_func(theta, L)
-
-        pos0 = forKin_func(theta, L)[-1, ]
-        delta_p = np.asmatrix(pos0 - pos1).T
-        
-        s = np.linalg.solve(-J, delta_p)
-        theta += s
-        if s.all() < threshold:
-            break
-    return theta
-
-def invKin_v2(theta,
-              L,
-              pos1,
-              n_iters: int = 10, 
-              threshold: float = 1e-2,
-              forKin_func = forKin,
-              jacobian_func = jacobian_cd_):
-    """Inverse Kinematics
-    Given desired pos, get joint angles.
-    Version 2: Broyden's method.
-    """
-    theta = np.asmatrix(theta)
-    # Initial estimation of the jacobian
-    if "jacobian_cd_" in str(jacobian_func):
-        B = jacobian_func(theta, L, forKin_func=forKin_func)
-    else:
-        B = jacobian_func(theta, L)
-
-    for _ in range(n_iters):
-        pos0 = forKin_func(theta, L)[-1, :]
-        delta_p = np.asmatrix(pos0 - pos1).T
-        s = np.linalg.pinv(-B) * delta_p
-        theta += s
-        if s.all() < threshold:
-            break
-
-        # Update approx jacobian
-        y = np.asmatrix(forKin_func(theta, L)[-1, :] - pos0).T   # delta_p current iter
-        B += ((y - B * s) * s.T) / (s.T * s)
-
-    return theta
+        return x.reshape(-1)
 
 
 class Arm3D:
@@ -242,44 +82,101 @@ class Arm3D:
                  L: np.ndarray = np.array([0.5, 0.5, 0.5]),
                  method: dict = {'invKin': 'broyden', 
                                  'jacobian': 'cd',
-                                 'forKin': 'forKin'},
+                                 'visual_servoing': True},
+                 cams: list = None,
                 ):
         self.theta = theta
         self.L = L
         self.p0 = np.array([0.0, 0.0, 0.0, 1])
+
         self._constraint_fig()
+        self.cams = cams
+        if cams is not None and len(cams) > 0:
+            self._constraint_fig_cam()
+
+        self.set_method(method)
+
+    def set_method(self, 
+                   method: dict):
+        self.method = method
+        self.forKin_func = forKin
+
+        # Use visual servoing
+        if method['visual_servoing']:
+            self.jacobian_func = visual_servoing.jacobian_cd_
+            self.invkin_func = visual_servoing.invKin_vs
+            self.pose_tracker = PoseTrack(cams=self.cams, dof=len(self.theta))
+
+        # Classic pose-based controls
+        else:
+            if method['invKin'] == 'newton':
+                self.invkin_func = basic_servoing.invKin_v1
+            else:
+                self.invkin_func = basic_servoing.invKin_v2
+
+            if method['jacobian'] == 'a':
+                self.jacobian_func = basic_servoing.jacobian_a_
+            else:
+                self.jacobian_func = basic_servoing.jacobian_cd_
+
+        print(str(self.forKin_func))
+        print(str(self.invkin_func))
+        print(str(self.jacobian_func))
     
     def _constraint_fig(self):
         """To make figure look nicer.
         """
         self.fig = plt.figure()
-        self.ax = self.fig.gca(projection='3d')
+        self.ax = self.fig.add_subplot(projection='3d')
         self.cid = self.fig.canvas.mpl_connect('key_press_event', self)
+
+    def _constraint_fig_cam(self):
+        """To make figure look nicer.
+        For camera projection.
+        """
+        self.fig_cam = plt.figure(2)
+        self.axes_cam = []
+        for i in range(len(self.cams)):
+            self.axes_cam.append(self.fig_cam.add_subplot(1, len(self.cams), i + 1))
+            #if 'PinholeCam' not in str(self.cams[i]):
+            self.axes_cam[i].axis('equal')
 
     def __call__(self, 
                  event):
-        # Current pos
-        self.p = forKin(self.theta, self.L, self.p0)[-1,:]
+        # Current end effector pos
+        p_end = self.forKin_func(self.theta, self.L, self.p0)[:,-1]
         
         # Left mouse click saves coordinates
         if event.key == 'left':
-            self.p[0] = self.p[0] - 0.1
+            p_end[0] = p_end[0] - 0.1
         elif event.key == 'right':
-            self.p[0] = self.p[0] + 0.1
+            p_end[0] = p_end[0] + 0.1
         elif event.key == 'up':
-            self.p[2] = self.p[2] + 0.1
+            p_end[2] = p_end[2] + 0.1
         elif event.key == 'down':
-            self.p[2] = self.p[2] - 0.1
-        elif event.key == 'a':
-            self.p[1] = self.p[1] - 0.1
-        elif event.key == 'd':
-            self.p[1] = self.p[1] + 0.1
+            p_end[2] = p_end[2] - 0.1
+        elif event.key == 'z':
+            p_end[1] = p_end[1] - 0.1
+        elif event.key == 'c':
+            p_end[1] = p_end[1] + 0.1
 
         # Move robot to desired coordinate using inverse kinematics
-        self.theta = invKin_v2(self.theta, self.L, self.p)
+        # Visual Servoing
+        if self.method['visual_servoing']:
+            pos_end = self.pose_tracker.track(p_end)
+            self.theta = self.invkin_func(self.theta, self.L, pos_end,
+                                          forKin_func=self.forKin_func,
+                                          pose_tracker=self.pose_tracker)
+
+        # Basic Servoing
+        else:
+            self.theta = self.invkin_func(self.theta, self.L, p_end[:-1], 
+                                          forKin_func=self.forKin_func,
+                                          jacobian_func=self.jacobian_func)
 
         # Draw
         self.plot(event)
+
 
     def plot(self, 
              event=None):
@@ -288,21 +185,43 @@ class Arm3D:
         # Clear figure 1st
         self.ax.clear()
         lim_range = 2.0
-        self.ax.set_xlim([0.0, lim_range])
+        self.ax.set_xlim([-lim_range, lim_range])
         self.ax.set_ylim([-lim_range, lim_range])
-        self.ax.set_zlim([-lim_range, 0.0])
+        self.ax.set_zlim([0, lim_range])
         self.ax.set_xlabel('$X$')
         self.ax.set_ylabel('$Y$')
         self.ax.set_zlabel('$Z$')
 
         # Current segments
-        pos = forKin(self.theta, self.L, self.p0)
+        pos = self.forKin_func(self.theta, self.L, self.p0)
 
         # Plot the new pos
-        self.ax.scatter(pos[:,0], pos[:,1], pos[:,2])
-        self.ax.plot(pos[:,0], pos[:,1], pos[:,2], 'k')
+        self.ax.scatter(pos[0,:], pos[1,:], pos[2,:])
+        self.ax.plot(pos[0,:], pos[1,:], pos[2,:], 'k')
+        
+
+        # If camera project is needed
+        if self.cams is not None:
+            for i, cam in enumerate(self.cams):
+                ax_cam = self.axes_cam[i]
+                ax_cam.clear()
+
+                # Camera projection
+                p = cam(pos)
+
+                # Plot
+                ax_cam.invert_yaxis()
+                ax_cam.xaxis.tick_top()
+                ax_cam.set_title(str(cam))
+                ax_cam.scatter(p[0,:], p[1,:])
+
+                plotCamera(cam, self.ax)
+                #self.ax.scatter(cam.C[0], cam.C[1], cam.C[2], c='orange')
         
         if event is not None:
             event.canvas.draw()
+            if self.cams is not None:
+                self.fig_cam.canvas.draw()
+
         else:
             plt.show()
