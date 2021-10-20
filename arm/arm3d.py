@@ -45,7 +45,7 @@ def forKin(theta,
     p3 = np.asarray(T0_1 * T1_2 * T2_3 * P0).squeeze(1)
 
     pos = np.stack([p0, p1, p2, p3], axis=1)
-    return pos   # Remove homogeneous term (4, dof) -> (3, dof)
+    return pos   # w/ homogeneous term (4, dof)
 
 
 # --------------------
@@ -53,8 +53,7 @@ def forKin(theta,
 # --------------------
 
 class PoseTrack(object):
-    """Fake visual tracker to track 
-    pose of the end effector.
+    """Fake visual tracker to track pose of the end effector.
     """
     def __init__(self, 
                  cams: list,
@@ -64,6 +63,10 @@ class PoseTrack(object):
 
     def track(self, 
               pos: np.ndarray):
+        """Return 2D pos in all camera views.
+        NOTE: Fake tracker will return the ideal projected 2D
+        coordinates using known cameras.
+        """
         assert pos.shape[0] == 4
         if len(pos.shape) == 1:
             pos = np.expand_dims(pos, axis=1)
@@ -163,12 +166,14 @@ class Arm3D:
         # Move robot to desired coordinate using inverse kinematics
         # Visual Servoing
         if self.method['visual_servoing']:
+            # For Visual Servoing, end effector goal is specificed
+            # by 2D pos in camera view
             pos_end = self.pose_tracker.track(p_end)
             self.theta = self.invkin_func(self.theta, self.L, pos_end,
                                           forKin_func=self.forKin_func,
                                           pose_tracker=self.pose_tracker)
 
-        # Basic Servoing
+        # Basic Servoing using 3D pos
         else:
             self.theta = self.invkin_func(self.theta, self.L, p_end[:-1], 
                                           forKin_func=self.forKin_func,

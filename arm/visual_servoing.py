@@ -17,6 +17,7 @@ def jacobian_cd_(theta,
 
         # Central difference, w.r.t theta_i
         # Get 3D pose 1st
+        # Track the 2D pose from camera
         P_plus = forKin_func(theta + alpha_, L)[:,-1]
         p_plus = pose_tracker.track(P_plus)
         P_minus = forKin_func(theta - alpha_, L)[:,-1]

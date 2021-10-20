@@ -16,13 +16,13 @@ if __name__ == '__main__':
                        C=np.array([1.5, 1.5, 0.25]),
                        theta=np.array([np.pi/2, np.pi / 2 + np.pi/4, 0]))
 
-    ccdcam1 = PinholeCam(f=5.0, 
+    ccdcam1 = CCDCam(f=5.0, 
+                     mx=2.0,
+                     my=0.5,
                      px=3.0,
                      py=3.0,
                      C=np.array([2.0, -0.5, 0.25]),
                      theta=np.array([np.pi/2, 3*np.pi / 8, 0]))
-
-    opcam1 = OrthoProjCam()
     
     arm_env = Arm3D(t, 
                     cams=[pcam1, ccdcam1])
