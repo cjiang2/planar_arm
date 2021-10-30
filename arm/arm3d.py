@@ -87,10 +87,13 @@ class Arm3D:
                                  'jacobian': 'cd',
                                  'visual_servoing': True},
                  cams: list = None,
+                 f_report = None,
                 ):
         self.theta = theta
         self.L = L
         self.p0 = np.array([0.0, 0.0, 0.0, 1])
+        if f_report is not None:
+            self.f_report = f_report
 
         self._constraint_fig()
         self.cams = cams
@@ -148,6 +151,10 @@ class Arm3D:
                  event):
         # Current end effector pos
         p_end = self.forKin_func(self.theta, self.L, self.p0)[:,-1]
+
+        # NOTE: Debug
+        if self.f_report is not None:
+            p_end_prev = p_end.copy()
         
         # Left mouse click saves coordinates
         if event.key == 'left':
@@ -171,16 +178,28 @@ class Arm3D:
             pos_end = self.pose_tracker.track(p_end)
             self.theta = self.invkin_func(self.theta, self.L, pos_end,
                                           forKin_func=self.forKin_func,
-                                          pose_tracker=self.pose_tracker)
+                                          pose_tracker=self.pose_tracker,
+                                          f_report=self.f_report)
 
         # Basic Servoing using 3D pos
         else:
             self.theta = self.invkin_func(self.theta, self.L, p_end[:-1], 
                                           forKin_func=self.forKin_func,
-                                          jacobian_func=self.jacobian_func)
+                                          jacobian_func=self.jacobian_func,
+                                          f_report=self.f_report)
 
         # Draw
         self.plot(event)
+
+        # NOTE: Debug
+        if self.f_report is not None:
+            d_expected = np.linalg.norm(p_end_prev[:-1] - p_end[:-1])
+            d_actual = np.linalg.norm(self.pos[:-1,-1] - p_end_prev[:-1])
+            self.f_report.write("\nExpected L2 dist (curr - prev): {}\n".format(d_expected))
+            self.f_report.write("L2 dist (curr - prev): {}\n".format(d_actual))
+            self.f_report.write("Err: {}\n".format(np.linalg.norm(d_expected - d_actual)))
+            self.f_report.write("####################\n")
+            self.f_report.write("\n")
 
 
     def plot(self, 
@@ -198,13 +217,12 @@ class Arm3D:
         self.ax.set_zlabel('$Z$')
 
         # Current segments
-        pos = self.forKin_func(self.theta, self.L, self.p0)
+        self.pos = self.forKin_func(self.theta, self.L, self.p0)
 
         # Plot the new pos
-        self.ax.scatter(pos[0,:], pos[1,:], pos[2,:])
-        self.ax.plot(pos[0,:], pos[1,:], pos[2,:], 'k')
+        self.ax.scatter(self.pos[0,:], self.pos[1,:], self.pos[2,:])
+        self.ax.plot(self.pos[0,:], self.pos[1,:], self.pos[2,:], 'k')
         
-
         # If camera project is needed
         if self.cams is not None:
             for i, cam in enumerate(self.cams):
@@ -212,7 +230,7 @@ class Arm3D:
                 ax_cam.clear()
 
                 # Camera projection
-                p = cam(pos)
+                p = cam(self.pos)
 
                 # Plot
                 ax_cam.invert_yaxis()

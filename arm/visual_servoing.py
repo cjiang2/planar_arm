@@ -37,7 +37,8 @@ def invKin_vs(theta,
               pose_tracker,
               step_size: float = 1e-1,
               n_iters: int = 5, 
-              threshold: float = 10.0):
+              threshold: float = 10.0,
+              f_report=None):
     # Ensure matrix calculation
     theta = np.asmatrix(theta)
 
@@ -48,8 +49,11 @@ def invKin_vs(theta,
                      forKin_func=forKin_func,
                      pose_tracker=pose_tracker)
 
-    print('#'*30)
-    for _ in range(n_iters):
+    # NOTE: Debug msg
+    if f_report is not None:
+        f_report.write('####################\n')
+
+    for iter_i in range(n_iters):
         pos0 = pose_tracker.track(forKin_func(theta, L)[:,-1])
 
         delta_p = np.asmatrix(pos0 - pos1).T
@@ -58,6 +62,14 @@ def invKin_vs(theta,
         # TODO: Explore thresholding condition***
         #if np.linalg.norm(s) < threshold:
         #    break
+        # NOTE: Debug msg
+        if f_report is not None:
+            f_report.write("VS Iter: {}\n".format(iter_i + 1))
+            f_report.write("B - Cond: {}, Norm: {}\n".format(np.linalg.cond(B), 
+                                                             np.linalg.norm(B)))
+            f_report.write("s - Cond: {}, Norm: {}\n".format(np.linalg.cond(s), 
+                                                             np.linalg.norm(s)))
+            f_report.write('#####\n')
 
         # Update
         theta += s
@@ -65,8 +77,5 @@ def invKin_vs(theta,
         # Update approx jacobian
         y = np.asmatrix(pose_tracker.track(forKin_func(theta, L)[:,-1]) - pos0).T   # delta_p current iter
         B += ((y - B * s) * s.T) / (s.T * s)
-
-        print('Cond:', np.linalg.cond(B), np.linalg.cond(s), 'Err:', np.linalg.norm(B), np.linalg.norm(s))
-    print('#'*30)
 
     return theta

@@ -24,9 +24,8 @@ if __name__ == '__main__':
                      C=np.array([2.0, -0.5, 0.25]),
                      theta=np.array([np.pi/2, 3*np.pi / 8, 0]))
     
-    arm_env = Arm3D(t, 
-                    cams=[pcam1, ccdcam1])
-    arm_env.plot()
-
-    
-    
+    with open("report.txt", "w") as f_report:
+        arm_env = Arm3D(t, 
+                        cams=[pcam1, ccdcam1], 
+                        f_report=f_report)
+        arm_env.plot()
