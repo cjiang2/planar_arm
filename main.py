@@ -26,6 +26,6 @@ if __name__ == '__main__':
     
     with open("report.txt", "w") as f_report:
         arm_env = Arm3D(t, 
-                        cams=[pcam1, ccdcam1], 
+                        cams=[pcam1], 
                         f_report=f_report)
         arm_env.plot()
