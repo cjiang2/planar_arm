@@ -54,9 +54,10 @@ def invKin_vs(theta,
         f_report.write('####################\n')
 
     for iter_i in range(n_iters):
+        # Track where end effector has moved to currently
         pos0 = pose_tracker.track(forKin_func(theta, L)[:,-1])
+        delta_p = np.asmatrix(pos0 - pos1).T    # image error
 
-        delta_p = np.asmatrix(pos0 - pos1).T
         s = np.linalg.pinv(-B) * delta_p
 
         # TODO: Explore thresholding condition***
